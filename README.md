@@ -23,7 +23,7 @@ npm run build    # production build in dist/, with offline service worker
 ## Anime-style exercise images
 
 `public/manga/<exercise>/<n>.webp` are the dataset photos redrawn as 90s shonen-anime characters (style only, no real characters).
-The app shows them when they exist and falls back to the original photo otherwise. So far only 10 exercises are done.
+The app shows them when they exist and falls back to the original photo otherwise.
 
 They are generated locally on an NVIDIA GPU by [tools/manga/generate.py](tools/manga/generate.py)
 (Stable Diffusion 1.5 anime model `Lykon/AnyLoRA` + Canny ControlNet to keep pose and equipment; about 5 GB of models on first run):
@@ -36,6 +36,7 @@ uv pip install --python .venv/Scripts/python.exe diffusers transformers accelera
 .venv/Scripts/python.exe generate.py Pullups Barbell_Squat   # some exercises
 .venv/Scripts/python.exe generate.py --all                    # all of them, skips images already done
 .venv/Scripts/python.exe generate.py --category stretching --first --style soft   # Flexibility module: pastel, golden hair, gym cut out
+.venv/Scripts/python.exe generate.py --all --skip-category stretching --style night --strength 0.9 --control 0.7   # other exercises: silver hair, dark night gym
 ```
 
 ## Credits
