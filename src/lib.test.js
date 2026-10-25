@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { MUSCLE_MAP, bodyData, filterExercises, progression, lastSets, muscleFromSlug, suggest, stretchSession, stretchSteps, STRETCH_ZONES, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps } from './lib.js'
+import { MUSCLE_MAP, bodyData, filterExercises, progression, lastSets, muscleFromSlug, suggest, stretchSession, stretchSteps, STRETCH_ZONES, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps, weekDates, planWeek } from './lib.js'
 
 const exercises = JSON.parse(readFileSync(new URL('./data/exercises.json', import.meta.url)))
 
@@ -77,4 +77,44 @@ test('tendon sessions: every hold each round, both sides, longer holds by level'
   assert.deepEqual(tendonSteps(9), one)
   const min = one.length * (30 + TENDON_REST) / 60
   assert.ok(min >= 8 && min <= 16, `level 1 lasts ${min} min`)
+})
+
+test('week dates run Monday to Sunday', () => {
+  assert.deepEqual([weekDates('2026-10-28')[0], weekDates('2026-10-28')[6]], ['2026-10-26', '2026-11-01'])
+  assert.equal(weekDates('2026-11-01')[0], '2026-10-26')
+})
+
+const W = weekDates('2026-10-26')
+const show = days => days.map(d => [d.lift?.name ?? '', d.tendons ?? ''])
+
+test('fresh week follows the routine', () => {
+  const days = planWeek(W[0], {})
+  assert.deepEqual(days.map(d => d.lift?.day ?? null), [0, 1, null, 3, 4, null, null])
+  assert.deepEqual(days.map(d => d.tendons), [null, null, 'todo', null, 'todo', null, 'todo'])
+  assert.deepEqual(days.map(d => !!d.run), [false, false, true, false, false, false, true])
+  assert.deepEqual(days.map(d => d.flex.zone), ['shoulders', 'back', 'full', 'hamstrings', 'neck', 'full', 'full'])
+})
+
+test('a missed lift moves, never legs the day before a run', () => {
+  const days = planWeek(W[1], {})
+  assert.deepEqual(show(days).map(d => d[0]), ['', 'Chest + triceps', '', 'Back + biceps', 'Legs', 'Shoulders + traps', ''])
+  for (const [i, d] of days.entries()) if (d.lift?.legs) assert.ok(!days[i + 1]?.run)
+})
+
+test('lifts done count in order', () => {
+  const days = planWeek(W[3], { lifts: [W[0], W[2]] })
+  assert.deepEqual(days.map(d => d.lift && [d.lift.name, d.lift.done]),
+    [['Chest + triceps', true], null, ['Back + biceps', true], ['Legs', false], ['Shoulders + traps', false], null, null])
+})
+
+test('tendons never two days in a row, across weeks too', () => {
+  assert.deepEqual(planWeek(W[2], { tendons: [W[1]] }).map(d => d.tendons), [null, 'done', null, null, 'todo', null, 'todo'])
+  // Last week's Sunday blocks Monday but does not count in this week's 3.
+  const days = planWeek(W[0], { tendons: [weekDates('2026-10-25')[6]] })
+  assert.equal(days[0].tendons, null)
+  assert.deepEqual(days.map(d => d.tendons).filter(Boolean).length, 3)
+})
+
+test('stretch sessions show as done', () => {
+  assert.equal(planWeek(W[0], { flex: [W[0]] })[0].flex.done, true)
 })

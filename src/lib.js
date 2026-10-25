@@ -138,3 +138,61 @@ export function tendonSteps(level) {
   const round = TENDON_HOLDS.flatMap(h => h.sides ? [{ h, side: 'Left side' }, { h, side: 'Right side' }] : [{ h }])
   return Array.from({ length: rounds }, () => round).flat().map(s => ({ ...s, hold }))
 }
+
+// Weekly routine, Mon = 0 … Sun = 6. Lifts in their usual order; runs are fixed and not logged.
+// Placement rules: no run the day after legs (Robineau 2016: 24 h between legs and running keeps more strength),
+// tendons 3×/week never two days in a row, a short stretch every day after training (Thomas 2018: ≥5 days/week).
+export const ROUTINE = {
+  lifts: [
+    { name: 'Chest + triceps', day: 0, zone: 'shoulders' },
+    { name: 'Back + biceps', day: 1, zone: 'back' },
+    { name: 'Legs', day: 3, zone: 'hamstrings', legs: true },
+    { name: 'Shoulders + traps', day: 4, zone: 'neck' },
+  ],
+  runs: { 2: 'Easy run · 30–40 min', 6: 'Long run · 45–60 min' },
+  tendonDays: [2, 4, 6],
+}
+
+const addDays = (date, n) => new Date(Date.parse(date) + n * 864e5).toISOString().slice(0, 10)
+// The 7 ISO dates (Mon…Sun) of the week containing date.
+export const weekDates = date => Array.from({ length: 7 }, (_, i) => addDays(date, i - (new Date(date).getUTCDay() + 6) % 7))
+
+// Every way to pick k items of arr, in order.
+const combos = (arr, k) => k === 0 ? [[]] : arr.flatMap((x, i) => combos(arr.slice(i + 1), k - 1).map(c => [x, ...c]))
+// Cheapest valid choice of k days (dropping items when none fits); ties go to the earliest days.
+function place(free, k, valid, cost) {
+  for (; k > 0; k--) {
+    let best = null, bestCost = Infinity
+    for (const c of combos(free, k)) if (valid(c) && cost(c) < bestCost) { best = c; bestCost = cost(c) }
+    if (best) return best
+  }
+  return []
+}
+
+// Plan of the week containing today, adapted to what is already logged (dates of lift, tendon and stretch sessions).
+// Missed lifts and tendon sessions move to the remaining days; past days only show what was done.
+export function planWeek(today, { lifts = [], tendons = [], flex = [] }) {
+  const dates = weekDates(today), t = dates.indexOf(today)
+  const doneLift = dates.map(d => lifts.includes(d)), doneTendon = dates.map(d => tendons.includes(d))
+  const days = dates.map((date, i) => ({ date, past: i < t, run: ROUTINE.runs[i] ?? null, lift: null, tendons: doneTendon[i] ? 'done' : null }))
+
+  // Lifts done this week count in order: the first one is chest, the second back, ...
+  let n = 0
+  days.forEach((d, i) => { if (doneLift[i] && n < ROUTINE.lifts.length) d.lift = { ...ROUTINE.lifts[n++], done: true } })
+  const left = ROUTINE.lifts.slice(n)
+  const freeLift = dates.map((_, i) => i).filter(i => i >= t && !doneLift[i])
+  place(freeLift, left.length,
+    c => c.every((d, j) => !left[j].legs || !ROUTINE.runs[d + 1]),
+    c => c.reduce((s, d) => s + (ROUTINE.lifts.some(l => l.day === d) ? 0 : ROUTINE.runs[d] ? 1.5 : 1), 0),
+  ).forEach((d, j) => { days[d].lift = { ...left[j], done: false } })
+
+  const tendonDone = dates.map((_, i) => i).filter(i => doneTendon[i])
+  if (tendons.includes(addDays(dates[0], -1))) tendonDone.push(-1)
+  place(dates.map((_, i) => i).filter(i => i >= t && !doneTendon[i]), ROUTINE.tendonDays.length - doneTendon.filter(Boolean).length,
+    c => { const s = new Set([...tendonDone, ...c]); return [...s].every(d => !s.has(d + 1)) },
+    c => c.filter(d => !ROUTINE.tendonDays.includes(d)).length,
+  ).forEach(d => { days[d].tendons = 'todo' })
+
+  days.forEach(d => { d.flex = { zone: d.lift?.zone ?? 'full', done: flex.includes(d.date) } })
+  return days
+}
