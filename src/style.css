@@ -131,8 +131,8 @@ main:has(> .soft) { max-width: none; background: #EEF3F8; min-height: 80vh; }
 .soft { --bg: #f6eef0; --panel: #fff; --line: #d3dfea; --text: #2E3A4B; --muted: #6b7a8f; --accent: #8DB8DE; --accent-ink: #2E3A4B;
   color-scheme: light; color: var(--text); }
 .soft h2 { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 1.2rem; text-align: center; }
-.soft button, .soft .btn { border-radius: 18px; }
-.soft .big { display: block; width: 100%; padding: 0.9rem; font-size: 1.1rem; margin-top: 1rem; text-align: center; }
+.soft button, .soft .btn, .tendon button, .tendon .btn { border-radius: 18px; }
+.soft .big, .tendon .big { display: block; width: 100%; padding: 0.9rem; font-size: 1.1rem; margin-top: 1rem; text-align: center; }
 .dots { display: inline-flex; gap: 3px; vertical-align: middle; }
 .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
 .dots i.on { background: var(--accent); }
@@ -161,3 +161,13 @@ main:has(> .soft) { max-width: none; background: #EEF3F8; min-height: 80vh; }
 .ring text { font-size: 30px; font-weight: 700; fill: var(--text); }
 .row.center { justify-content: center; }
 .player details { text-align: left; background: var(--panel); border-radius: 18px; padding: 0.7rem 1rem; margin-top: 1rem; }
+
+/* Tendons module: dark app theme, night-gym images. */
+.tendon .illu { background: #161e34; }
+.tendon .illu img { mix-blend-mode: normal; }
+.tendon .ring .track { stroke: var(--line); }
+.tendon .stretch-list img { background: #161e34; }
+.tendon .chart-card { margin: 1rem 0; }
+.tendon .warn { color: #e8a33d; }
+.tendon .levels button { color: var(--text); }
+.clock { font-size: 3.5rem; font-weight: 700; margin: 1.5rem 0; font-variant-numeric: tabular-nums; }
