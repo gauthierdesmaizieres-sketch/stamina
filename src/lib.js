@@ -109,3 +109,32 @@ export function stretchSession(list, zone, level) {
     for (const p of pools) if (p[i] && !out.includes(p[i]) && fits(p[i])) out.push(p[i])
   return out
 }
+
+// Tendon module: long heavy isometric holds (Kubo 2001: 20 s+ holds at ~70% effort stiffen tendons, 1 s pulses do not).
+// img: a dataset photo of a close pose (no wall-sit photo exists, the squat is the nearest).
+export const TENDON_HOLDS = [
+  { id: 'wall', name: 'Wall sit', tendon: 'Knees (patellar tendon)', img: 'Bodyweight_Squat/1.jpg',
+    how: ['Back flat against a wall, slide down until your knees are bent at about 90°.', 'Knees over the ankles, weight in the heels.', 'Push your back into the wall and hold.'] },
+  { id: 'calf', name: 'Single-leg calf hold', tendon: 'Achilles', img: 'Standing_Dumbbell_Calf_Raise/1.jpg', sides: true,
+    how: ['Stand on one foot on the edge of a step, a hand on the wall for balance.', 'Rise onto the ball of the foot, then lower halfway and hold there.', 'Keep the knee straight and the ankle still.'] },
+  { id: 'hang', name: 'Dead hang', tendon: 'Elbows, forearms and fingers', img: 'Pullups/0.jpg',
+    how: ['Hang from a solid bar, hands shoulder-width, arms straight.', 'Pull the shoulders slightly down, away from the ears.', 'Too hard? Keep your feet on a box and take part of your weight.'] },
+  { id: 'push', name: 'Wall press', tendon: 'Shoulders, chest and triceps', img: 'Incline_Push-Up/0.jpg',
+    how: ['Hands on a wall or a door frame, arms half bent, like the middle of a push-up.', 'Push as hard as you can without moving: the wall does not move, you do not move.', 'Body straight, abs tight, keep breathing.'] },
+  { id: 'bridge', name: 'Single-leg bridge hold', tendon: 'Hamstrings and glutes', img: 'Single_Leg_Glute_Bridge/1.jpg', sides: true,
+    how: ['Lie on your back, one foot flat on the floor, the other leg straight in the air.', 'Push through the heel and lift the hips until the body is straight from knee to shoulder.', 'Hold the hips level.'] },
+]
+// Difficulty: longer holds, then added load. Circuit, so the short rest falls on a different tendon each time.
+export const TENDON_LEVELS = {
+  1: { hold: 30, rounds: 2, load: 'Bodyweight only, effort hard but clean.' },
+  2: { hold: 45, rounds: 2, load: 'Bodyweight, longer holds.' },
+  3: { hold: 45, rounds: 2, load: 'Add load: a backpack with books (wall sit, calf), a weight on the hips (bridge), a slow pull-up start (hang).' },
+}
+export const TENDON_REST = 20 // seconds
+
+// Player steps for a tendon session: every round goes through all holds, one-sided holds once per side.
+export function tendonSteps(level) {
+  const { hold, rounds } = TENDON_LEVELS[level] ?? TENDON_LEVELS[1]
+  const round = TENDON_HOLDS.flatMap(h => h.sides ? [{ h, side: 'Left side' }, { h, side: 'Right side' }] : [{ h }])
+  return Array.from({ length: rounds }, () => round).flat().map(s => ({ ...s, hold }))
+}

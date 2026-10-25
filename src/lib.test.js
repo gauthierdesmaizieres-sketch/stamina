@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { MUSCLE_MAP, bodyData, filterExercises, progression, lastSets, muscleFromSlug, suggest, stretchSession, stretchSteps, STRETCH_ZONES, HOLD, REST } from './lib.js'
+import { MUSCLE_MAP, bodyData, filterExercises, progression, lastSets, muscleFromSlug, suggest, stretchSession, stretchSteps, STRETCH_ZONES, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps } from './lib.js'
 
 const exercises = JSON.parse(readFileSync(new URL('./data/exercises.json', import.meta.url)))
 
@@ -66,4 +66,15 @@ test('stretch sessions: right zone, level cap, length', () => {
   const roller = stretchSession(exercises, 'roller', 1)
   assert.ok(roller.length >= 7 && stretchSteps(roller).length * (HOLD + REST) <= 600)
   assert.ok(roller.every(e => e.equipment === 'foam roll'))
+})
+
+test('tendon sessions: every hold each round, both sides, longer holds by level', () => {
+  const one = tendonSteps(1), three = tendonSteps(3)
+  const perRound = TENDON_HOLDS.reduce((n, h) => n + (h.sides ? 2 : 1), 0)
+  assert.equal(one.length, perRound * TENDON_LEVELS[1].rounds)
+  assert.equal(one.filter(s => s.h.id === 'calf').length, 2 * TENDON_LEVELS[1].rounds)
+  assert.ok(one.every(s => s.hold === 30) && three.every(s => s.hold === 45))
+  assert.deepEqual(tendonSteps(9), one)
+  const min = one.length * (30 + TENDON_REST) / 60
+  assert.ok(min >= 8 && min <= 16, `level 1 lasts ${min} min`)
 })

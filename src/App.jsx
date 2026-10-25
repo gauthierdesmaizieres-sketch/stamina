@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Model from 'react-body-highlighter'
 import exercises from './data/exercises.json'
-import { MUSCLES, IMG_BASE, bodyData, muscleFromSlug, filterExercises, progression, lastSets, suggest, WEIGHT_STEP, stretchSession, stretchSteps, twoSided, HOLD, REST } from './lib.js'
+import { MUSCLES, IMG_BASE, bodyData, muscleFromSlug, filterExercises, progression, lastSets, suggest, WEIGHT_STEP, stretchSession, stretchSteps, twoSided, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps } from './lib.js'
 
 const byId = new Map(exercises.map(e => [e.id, e]))
 const EQUIPMENT = [...new Set(exercises.map(e => e.equipment).filter(Boolean))].sort()
@@ -35,6 +35,8 @@ export default function App() {
   const [programs, setPrograms] = useStored('programs', [])
   const [sessions, setSessions] = useStored('sessions', [])
   const [gym, setGym] = useStored('gym', [])
+  const [tendonDays, setTendonDays] = useStored('tendonDays', [])
+  const [tendonTests, setTendonTests] = useStored('tendonTests', [])
   const [page, id] = useHash()
   const store = { programs, setPrograms, sessions, setSessions, gym }
 
@@ -47,6 +49,9 @@ export default function App() {
   else if (page === 'progress') view = <Progress sessions={sessions} />
   else if (page === 'flex' && id) view = <FlexSession zone={id} />
   else if (page === 'flex') view = <Flex />
+  else if (page === 'tendons' && id === 'session') view = <TendonSession setTendonDays={setTendonDays} />
+  else if (page === 'tendons' && id === 'test') view = <WallTest tests={tendonTests} setTests={setTendonTests} />
+  else if (page === 'tendons') view = <Tendons tendonDays={tendonDays} tests={tendonTests} />
   else if (page === 'gym') view = <Gym gym={gym} setGym={setGym} />
   else view = <ExerciseList gym={gym} />
 
@@ -59,6 +64,7 @@ export default function App() {
           <a href="#/" className={tab === '' ? 'on' : ''}>Exercises</a>
           <a href="#/programs" className={tab === 'programs' ? 'on' : ''}>Programs</a>
           <a href="#/flex" className={tab === 'flex' ? 'on' : ''}>Flexibility</a>
+          <a href="#/tendons" className={tab === 'tendons' ? 'on' : ''}>Tendons</a>
           <a href="#/progress" className={tab === 'progress' ? 'on' : ''}>Progress</a>
           <a href="#/history" className={tab === 'history' ? 'on' : ''}>History</a>
         </nav>
@@ -468,11 +474,9 @@ function beep(ctx, freq = 880) {
   o.start(); o.stop(ctx.currentTime + 0.3)
 }
 
-function FlexSession({ zone }) {
-  const [level] = useStored('flexLevel', 1)
-  const list = useMemo(() => stretchSession(exercises, zone, level), [zone, level])
-  const steps = useMemo(() => stretchSteps(list), [list])
-  // run: null = not started; phase 'rest' shows the upcoming stretch before its hold.
+// Timed hold player shared by Flexibility and Tendons. steps: [{ key, name, img, side, how, hold }].
+// run: null = not started; phase 'rest' shows the upcoming step before its hold.
+function Player({ steps, rest, back, backLabel, holdLabel, intro, onDone }) {
   const [run, setRun] = useState(null)
   const [ctx, setCtx] = useState(null)
 
@@ -480,49 +484,39 @@ function FlexSession({ zone }) {
     if (!run || run.paused || run.done) return
     const t = setTimeout(() => {
       if (run.left > 1) return setRun({ ...run, left: run.left - 1 })
-      if (run.phase === 'rest') { beep(ctx); return setRun({ ...run, phase: 'hold', left: HOLD }) }
+      if (run.phase === 'rest') { beep(ctx); return setRun({ ...run, phase: 'hold', left: steps[run.i].hold }) }
       beep(ctx, 660)
-      setRun(run.i + 1 < steps.length ? { ...run, i: run.i + 1, phase: 'rest', left: REST } : { ...run, done: true })
+      if (run.i + 1 < steps.length) return setRun({ ...run, i: run.i + 1, phase: 'rest', left: rest })
+      onDone?.()
+      setRun({ ...run, done: true })
     }, 1000)
     return () => clearTimeout(t)
-  }, [run, ctx, steps.length])
-
-  if (!ZONE_LABELS[zone] || !list.length) return <p className="soft narrow">No stretches here. <a href="#/flex">Back</a></p>
+  }, [run, ctx, steps, rest, onDone])
 
   function start() {
     // Audio must be created from a user gesture on mobile.
     setCtx(c => c ?? new (window.AudioContext || window.webkitAudioContext)())
-    setRun({ i: 0, phase: 'rest', left: REST, paused: false, done: false })
+    setRun({ i: 0, phase: 'rest', left: rest, paused: false, done: false })
   }
 
-  if (!run) return (
-    <div className="soft narrow">
-      <a href="#/flex" className="back">← Flexibility</a>
-      <h1>{ZONE_LABELS[zone]}</h1>
-      <p className="hint"><Dots n={level} /> {list.length} stretches · {HOLD}s each · ~{mins(list)} min</p>
-      <ol className="stretch-list">
-        {list.map(e => <li key={e.id}><img {...photo(e.images[0])} alt="" loading="lazy" /><span>{e.name}{twoSided(e) && <small> · both sides</small>}</span></li>)}
-      </ol>
-      <button className="big" onClick={start}>Start</button>
-    </div>
-  )
+  if (!run) return <>{intro}<button className="big" onClick={start}>Start</button></>
 
   if (run.done) return (
-    <div className="soft narrow player">
+    <div className="player">
       <h1>Well done!</h1>
-      <p className="hint">{list.length} stretches · ~{mins(list)} min</p>
-      <a href="#/flex" className="btn big">Back to zones</a>
+      <p className="hint">{steps.length} holds · ~{Math.round(steps.reduce((n, s) => n + s.hold + rest, 0) / 60)} min</p>
+      <a href={back} className="btn big">{backLabel}</a>
     </div>
   )
 
-  const { ex, side } = steps[run.i], total = run.phase === 'hold' ? HOLD : REST
+  const { name, img, side, how } = steps[run.i], total = run.phase === 'hold' ? steps[run.i].hold : rest
   const r = 54, c = 2 * Math.PI * r
   return (
-    <div className="soft narrow player">
-      <a href="#/flex" className="back">← Quit</a>
-      <p className="hint">{run.i + 1} / {steps.length} · {side && `${side} · `}{run.phase === 'rest' ? 'Get ready' : zone === 'roller' ? 'Roll slowly' : 'Hold'}</p>
-      <div className="illu"><img key={ex.id} {...photo(ex.images[0])} alt={ex.name} /></div>
-      <h2>{ex.name}</h2>
+    <div className="player">
+      <a href={back} className="back">← Quit</a>
+      <p className="hint">{run.i + 1} / {steps.length} · {side && `${side} · `}{run.phase === 'rest' ? 'Get ready' : holdLabel}</p>
+      <div className="illu"><img key={img} {...photo(img)} alt={name} /></div>
+      <h2>{name}</h2>
       <svg viewBox="0 0 120 120" className={`ring ${run.phase}`} role="timer" aria-label={`${run.left} seconds left`}>
         <circle cx="60" cy="60" r={r} className="track" />
         <circle cx="60" cy="60" r={r} className="bar" strokeDasharray={c} strokeDashoffset={c * (1 - run.left / total)} />
@@ -532,7 +526,104 @@ function FlexSession({ zone }) {
         <button className="ghost" onClick={() => setRun({ ...run, paused: !run.paused })}>{run.paused ? 'Resume' : 'Pause'}</button>
         <button className="ghost" onClick={() => setRun({ ...run, left: 1 })}>Skip →</button>
       </div>
-      <details><summary>How to</summary><ol>{ex.instructions.map((t, i) => <li key={i}>{t}</li>)}</ol></details>
+      <details><summary>How to</summary><ol>{how.map((t, i) => <li key={i}>{t}</li>)}</ol></details>
+    </div>
+  )
+}
+
+function FlexSession({ zone }) {
+  const [level] = useStored('flexLevel', 1)
+  const list = useMemo(() => stretchSession(exercises, zone, level), [zone, level])
+  const steps = useMemo(() => stretchSteps(list).map(({ ex, side }) =>
+    ({ key: ex.id, name: ex.name, img: ex.images[0], side, how: ex.instructions, hold: HOLD })), [list])
+  if (!ZONE_LABELS[zone] || !list.length) return <p className="soft narrow">No stretches here. <a href="#/flex">Back</a></p>
+  return (
+    <div className="soft narrow">
+      <Player steps={steps} rest={REST} back="#/flex" backLabel="Back to zones" holdLabel={zone === 'roller' ? 'Roll slowly' : 'Hold'} intro={<>
+        <a href="#/flex" className="back">← Flexibility</a>
+        <h1>{ZONE_LABELS[zone]}</h1>
+        <p className="hint"><Dots n={level} /> {list.length} stretches · {HOLD}s each · ~{mins(list)} min</p>
+        <ol className="stretch-list">
+          {list.map(e => <li key={e.id}><img {...photo(e.images[0])} alt="" loading="lazy" /><span>{e.name}{twoSided(e) && <small> · both sides</small>}</span></li>)}
+        </ol>
+      </>} />
+    </div>
+  )
+}
+
+const tendonMins = level => Math.round(tendonSteps(level).reduce((n, s) => n + s.hold + TENDON_REST, 0) / 60)
+const daysSince = date => Math.round((new Date(today()) - new Date(date)) / 864e5)
+
+function Tendons({ tendonDays, tests }) {
+  const [level, setLevel] = useStored('tendonLevel', 1)
+  const last = tendonDays.at(-1), since = last && daysSince(last)
+  return (
+    <div className="tendon narrow">
+      <h1>Tendons</h1>
+      <p className="hint">Long, heavy holds make tendons stiffer and stronger; short pulses do not. 2–3 sessions a week, never two days in a row.</p>
+      <div className="levels" role="radiogroup" aria-label="Difficulty">
+        {[1, 2, 3].map(n => (
+          <button key={n} role="radio" aria-checked={level === n} className={level === n ? 'on' : ''} onClick={() => setLevel(n)}>
+            <Dots n={n} /> {TENDON_LEVELS[n].hold}s{n === 3 ? ' + load' : ''}
+          </button>
+        ))}
+      </div>
+      <a href="#/tendons/session" className="btn big">Start session · ~{tendonMins(level)} min</a>
+      {last && <p className={since < 1 ? 'warn' : 'hint'}>Last session: {last}{since < 1 ? ' — rest at least one day before the next one.' : ''}</p>}
+      <ul className="stretch-list">
+        {TENDON_HOLDS.map(h => <li key={h.id}><img {...photo(h.img)} alt="" loading="lazy" /><span><strong>{h.name}</strong><small> · {h.tendon}{h.sides ? ' · each side' : ''}</small></span></li>)}
+      </ul>
+      <section className="chart-card">
+        <strong>Wall-sit test</strong>
+        <p className="hint">Hold a wall sit as long as you can, once every 2–4 weeks, to see your tendons progress.</p>
+        {tests.length > 0 && <Chart points={tests.map(t => ({ date: t.date, value: t.seconds }))} unit="s" />}
+        <a href="#/tendons/test" className="btn">Take the test</a>
+      </section>
+      <p className="hint">Breathe through every hold: holds raise blood pressure. Stop on sharp joint pain. With high blood pressure, a heart condition or a joint injury, ask a doctor first. Use a solid bar and a solid wall.</p>
+    </div>
+  )
+}
+
+function TendonSession({ setTendonDays }) {
+  const [level] = useStored('tendonLevel', 1)
+  const { load } = TENDON_LEVELS[level] ?? TENDON_LEVELS[1]
+  const steps = useMemo(() => tendonSteps(level).map(({ h, side, hold }) =>
+    ({ key: h.id, name: h.name, img: h.img, side, how: [...h.how, load], hold })), [level, load])
+  const done = useCallback(() => setTendonDays(d => d.at(-1) === today() ? d : [...d, today()]), [setTendonDays])
+  return (
+    <div className="tendon narrow">
+      <Player steps={steps} rest={TENDON_REST} back="#/tendons" backLabel="Back to tendons" holdLabel="Hold hard" onDone={done} intro={<>
+        <a href="#/tendons" className="back">← Tendons</a>
+        <h1>Tendon session</h1>
+        <p className="hint"><Dots n={level} /> {steps.length} holds · {steps[0].hold}s each · ~{tendonMins(level)} min · {load}</p>
+      </>} />
+    </div>
+  )
+}
+
+function WallTest({ tests, setTests }) {
+  const [start, setStart] = useState(null)
+  const [now, setNow] = useState(0)
+  useEffect(() => {
+    if (!start) return
+    const t = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(t)
+  }, [start])
+  const secs = start ? Math.floor((now - start) / 1000) : 0
+  function stop() {
+    setTests([...tests, { date: today(), seconds: secs }])
+    location.hash = '#/tendons'
+  }
+  return (
+    <div className="tendon narrow player">
+      <a href="#/tendons" className="back">← Tendons</a>
+      <h1>Wall-sit test</h1>
+      <p className="hint">Knees at 90°, back flat on the wall. Start the clock, hold as long as you can with good form, then stop.</p>
+      <p className="clock" role="timer">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')}</p>
+      {start
+        ? <button className="big" onClick={stop} disabled={secs < 1}>Stop and save</button>
+        : <button className="big" onClick={() => { setStart(Date.now()); setNow(Date.now()) }}>Start</button>}
+      {tests.length > 0 && <p className="hint">Best so far: {Math.max(...tests.map(t => t.seconds))} s</p>}
     </div>
   )
 }
