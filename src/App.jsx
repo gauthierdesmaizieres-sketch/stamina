@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Model from 'react-body-highlighter'
 import exercises from './data/exercises.json'
-import { MUSCLES, IMG_BASE, bodyData, muscleFromSlug, filterExercises, progression, lastSets, suggest, WEIGHT_STEP, stretchSession, stretchSteps, twoSided, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps } from './lib.js'
+import { MUSCLES, IMG_BASE, bodyData, muscleFromSlug, filterExercises, progression, lastSets, suggest, WEIGHT_STEP, stretchSession, stretchSteps, twoSided, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps, planWeek } from './lib.js'
 
 const byId = new Map(exercises.map(e => [e.id, e]))
 const EQUIPMENT = [...new Set(exercises.map(e => e.equipment).filter(Boolean))].sort()
@@ -37,6 +37,7 @@ export default function App() {
   const [gym, setGym] = useStored('gym', [])
   const [tendonDays, setTendonDays] = useStored('tendonDays', [])
   const [tendonTests, setTendonTests] = useStored('tendonTests', [])
+  const [flexDays, setFlexDays] = useStored('flexDays', [])
   const [page, id] = useHash()
   const store = { programs, setPrograms, sessions, setSessions, gym }
 
@@ -47,7 +48,8 @@ export default function App() {
   else if (page === 'workout') view = <Workout id={id} {...store} />
   else if (page === 'history') view = <History {...store} />
   else if (page === 'progress') view = <Progress sessions={sessions} />
-  else if (page === 'flex' && id) view = <FlexSession zone={id} />
+  else if (page === 'week') view = <Week sessions={sessions} tendonDays={tendonDays} flexDays={flexDays} />
+  else if (page === 'flex' && id) view = <FlexSession zone={id} setFlexDays={setFlexDays} />
   else if (page === 'flex') view = <Flex />
   else if (page === 'tendons' && id === 'session') view = <TendonSession setTendonDays={setTendonDays} />
   else if (page === 'tendons' && id === 'test') view = <WallTest tests={tendonTests} setTests={setTendonTests} />
@@ -62,6 +64,7 @@ export default function App() {
         <a href="#/" className="brand">STAMINA</a>
         <nav>
           <a href="#/" className={tab === '' ? 'on' : ''}>Exercises</a>
+          <a href="#/week" className={tab === 'week' ? 'on' : ''}>Week</a>
           <a href="#/programs" className={tab === 'programs' ? 'on' : ''}>Programs</a>
           <a href="#/flex" className={tab === 'flex' ? 'on' : ''}>Flexibility</a>
           <a href="#/tendons" className={tab === 'tendons' ? 'on' : ''}>Tendons</a>
@@ -531,15 +534,16 @@ function Player({ steps, rest, back, backLabel, holdLabel, intro, onDone }) {
   )
 }
 
-function FlexSession({ zone }) {
+function FlexSession({ zone, setFlexDays }) {
   const [level] = useStored('flexLevel', 1)
   const list = useMemo(() => stretchSession(exercises, zone, level), [zone, level])
   const steps = useMemo(() => stretchSteps(list).map(({ ex, side }) =>
     ({ key: ex.id, name: ex.name, img: ex.images[0], side, how: ex.instructions, hold: HOLD })), [list])
+  const done = useCallback(() => setFlexDays(d => d.at(-1) === today() ? d : [...d, today()]), [setFlexDays])
   if (!ZONE_LABELS[zone] || !list.length) return <p className="soft narrow">No stretches here. <a href="#/flex">Back</a></p>
   return (
     <div className="soft narrow">
-      <Player steps={steps} rest={REST} back="#/flex" backLabel="Back to zones" holdLabel={zone === 'roller' ? 'Roll slowly' : 'Hold'} intro={<>
+      <Player steps={steps} rest={REST} back="#/flex" backLabel="Back to zones" holdLabel={zone === 'roller' ? 'Roll slowly' : 'Hold'} onDone={done} intro={<>
         <a href="#/flex" className="back">← Flexibility</a>
         <h1>{ZONE_LABELS[zone]}</h1>
         <p className="hint"><Dots n={level} /> {list.length} stretches · {HOLD}s each · ~{mins(list)} min</p>
@@ -624,6 +628,31 @@ function WallTest({ tests, setTests }) {
         ? <button className="big" onClick={stop} disabled={secs < 1}>Stop and save</button>
         : <button className="big" onClick={() => { setStart(Date.now()); setNow(Date.now()) }}>Start</button>}
       {tests.length > 0 && <p className="hint">Best so far: {Math.max(...tests.map(t => t.seconds))} s</p>}
+    </div>
+  )
+}
+
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function Week({ sessions, tendonDays, flexDays }) {
+  const days = planWeek(today(), { lifts: sessions.map(s => s.date), tendons: tendonDays, flex: flexDays })
+  const mark = done => done ? '✓ ' : ''
+  return (
+    <div className="narrow">
+      <h1>This week</h1>
+      <p className="hint">Lifting, running, tendons and stretching without overload. Missed a session? It moves to a free day: never legs the day before a run, tendons never two days in a row.</p>
+      <ul className="week">
+        {days.map((d, i) => (
+          <li key={d.date} className={d.date === today() ? 'today' : d.past ? 'past' : ''}>
+            <strong>{DAY_NAMES[i]} <small>{d.date.slice(5)}</small></strong>
+            {d.lift && <a href="#/programs" className={d.lift.done ? 'done' : ''}>{mark(d.lift.done)}{d.lift.name}</a>}
+            {d.run && !d.past && <span>{d.run}</span>}
+            {d.tendons && <a href="#/tendons/session" className={d.tendons === 'done' ? 'done' : ''}>{mark(d.tendons === 'done')}Tendons · 10 min{d.tendons === 'todo' && (d.lift || d.run) ? ', before' : ''}</a>}
+            {(!d.past || d.flex.done) && <a href={`#/flex/${d.flex.zone}`} className={d.flex.done ? 'done' : ''}>{mark(d.flex.done)}Stretch · {ZONE_LABELS[d.flex.zone]}{d.lift || d.run ? ', after' : ''}</a>}
+            {!d.past && !d.lift && !d.run && <span>Rest</span>}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

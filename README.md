@@ -12,6 +12,7 @@ npm test         # helper tests (node:test)
 npm run build    # production build in dist/, with offline service worker
 ```
 
+- **Week**: the weekly routine (lifting Mon–Tue–Thu–Fri, runs Wed + Sun, tendons 3×, stretching every day). Missed sessions move to free days: never legs the day before a run, tendons never two days in a row.
 - **Exercises**: search and filter by muscle (dropdown or tap the body map) and equipment.
 - **My gym**: tick the equipment your gym has; the list and the program builder only show exercises you can do there.
 - **Exercise page**: photos, instructions, primary/secondary muscles on a body map, progress chart.

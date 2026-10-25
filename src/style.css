@@ -13,7 +13,8 @@ h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.08em; color: 
 .top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 0.7rem 1rem; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 900; letter-spacing: 0.18em; text-decoration: none; color: var(--accent); }
-nav { display: flex; gap: 0.3rem; }
+nav { display: flex; gap: 0.3rem; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+nav a { flex-shrink: 0; }
 nav a { text-decoration: none; padding: 0.35rem 0.7rem; border-radius: 99px; color: var(--muted); }
 nav a.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 main { max-width: 1200px; margin: 0 auto; padding: 1rem; }
@@ -171,3 +172,13 @@ main:has(> .soft) { max-width: none; background: #EEF3F8; min-height: 80vh; }
 .tendon .warn { color: #e8a33d; }
 .tendon .levels button { color: var(--text); }
 .clock { font-size: 3.5rem; font-weight: 700; margin: 1.5rem 0; font-variant-numeric: tabular-nums; }
+
+.week { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
+.week li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem 0.9rem; }
+.week li > strong { width: 5.5rem; }
+.week small { color: var(--muted); font-weight: 400; }
+.week a, .week span { border: 1px solid var(--line); border-radius: 99px; padding: 0.15rem 0.65rem; font-size: 0.88rem; text-decoration: none; }
+.week span { color: var(--muted); }
+.week a.done { color: var(--accent); border-color: var(--accent); }
+.week li.today { border-color: var(--accent); }
+.week li.past { opacity: 0.6; }
