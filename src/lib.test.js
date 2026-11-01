@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { MUSCLE_MAP, bodyData, filterExercises, progression, lastSets, muscleFromSlug, suggest, stretchSession, stretchSteps, STRETCH_ZONES, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps, weekDates, planWeek } from './lib.js'
+import { MUSCLE_MAP, bodyData, filterExercises, progression, lastSets, muscleFromSlug, suggest, stretchSession, stretchSteps, STRETCH_ZONES, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps, weekDates, planWeek, dayFill } from './lib.js'
 
 const exercises = JSON.parse(readFileSync(new URL('./data/exercises.json', import.meta.url)))
 
@@ -117,4 +117,10 @@ test('tendons never two days in a row, across weeks too', () => {
 
 test('stretch sessions show as done', () => {
   assert.equal(planWeek(W[0], { flex: [W[0]] })[0].flex.done, true)
+})
+
+test('dayFill counts lift, tendons and stretch', () => {
+  assert.equal(dayFill({ lift: null, tendons: null, flex: { done: false } }), 0)
+  assert.equal(dayFill({ lift: { done: true }, tendons: 'todo', flex: { done: false } }), 1 / 3)
+  assert.equal(dayFill({ lift: { done: true }, tendons: 'done', flex: { done: true } }), 1)
 })
