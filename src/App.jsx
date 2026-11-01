@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { flushSync } from 'react-dom'
 import Model from 'react-body-highlighter'
 import exercises from './data/exercises.json'
-import { MUSCLES, IMG_BASE, bodyData, muscleFromSlug, filterExercises, progression, lastSets, suggest, WEIGHT_STEP, stretchSession, stretchSteps, twoSided, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps, planWeek } from './lib.js'
+import { MUSCLES, IMG_BASE, bodyData, muscleFromSlug, filterExercises, progression, lastSets, suggest, WEIGHT_STEP, stretchSession, stretchSteps, twoSided, HOLD, REST, TENDON_HOLDS, TENDON_LEVELS, TENDON_REST, tendonSteps, planWeek, dayFill } from './lib.js'
 
 const byId = new Map(exercises.map(e => [e.id, e]))
 const EQUIPMENT = [...new Set(exercises.map(e => e.equipment).filter(Boolean))].sort()
@@ -21,15 +22,58 @@ function useStored(key, initial) {
   return [value, setValue]
 }
 
+const scrolls = new Map() // scroll position per route, so going back lands where you left
+const depth = h => h.split('/').length
+
 function useHash() {
   const [hash, setHash] = useState(location.hash)
   useEffect(() => {
-    const on = () => { setHash(location.hash); window.scrollTo(0, 0) }
+    let prev = location.hash
+    const on = () => {
+      const from = prev, to = prev = location.hash
+      scrolls.set(from, scrollY)
+      const named = []
+      // The tapped picture morphs into the next page's hero, and back.
+      const name = route => {
+        const img = document.querySelector(`a[href="${CSS.escape(route)}"] img`)
+        if (img) { img.style.viewTransitionName = 'hero'; named.push(img) }
+      }
+      const go = () => { flushSync(() => setHash(to)); scrollTo(0, scrolls.get(to) ?? 0) }
+      if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return go()
+      document.documentElement.dataset.nav = depth(to) > depth(from) ? 'in' : depth(to) < depth(from) ? 'out' : ''
+      name(to)
+      document.startViewTransition(() => { go(); name(from) }).finished
+        .finally(() => named.forEach(img => { img.style.viewTransitionName = '' }))
+    }
     addEventListener('hashchange', on)
     return () => removeEventListener('hashchange', on)
   }, [])
   return hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent)
 }
+
+const TABS = [
+  ['#/', 'Today', ['', 'week'], 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16'],
+  ['#/exercises', 'Exercises', ['exercises', 'exercise', 'gym'], 'M2 12h1M6 8H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 7v10a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1zM9 12h6M15 7v10a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-1a1 1 0 0 0-1 1zM18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M22 12h-1'],
+  ['#/programs', 'Programs', ['programs', 'workout'], 'M9 6h11M9 12h11M9 18h11M5 6v.01M5 12v.01M5 18v.01'],
+  ['#/flex', 'Recovery', ['flex', 'tendons'], 'M3 17h1M20 17h1M12 9V3M5.6 10.6l.7.7M18.4 10.6l-.7.7M8 17a4 4 0 0 1 8 0M3 21h18'],
+  ['#/progress', 'Progress', ['progress', 'history'], 'M4 19h16M4 15l4-6 4 2 4-5 4 4'],
+]
+
+// Page title that doubles as a switch between two sibling pages.
+const Sub = ({ items, current }) => (
+  <h1 className="sub">{items.map(([href, name]) => <a key={href} href={href} aria-current={href === current ? 'page' : undefined}>{name}</a>)}</h1>
+)
+const RECOVERY = [['#/flex', 'Flexibility'], ['#/tendons', 'Tendons']]
+const RECORDS = [['#/progress', 'Progress'], ['#/history', 'History']]
+
+// The stamina bar. cells: [{ fill: 0–1, label, now }].
+const Gauge = ({ cells, label }) => (
+  <div className="gauge" role="img" aria-label={label}>
+    {cells.map((c, i) => <span key={i} className={c.now ? 'cell now' : 'cell'} style={{ '--fill': c.fill, '--i': i }}><i />{c.label && <small>{c.label}</small>}</span>)}
+  </div>
+)
+
+const fmtDate = d => new Date(d).toLocaleDateString('en', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
 
 export default function App() {
   const [programs, setPrograms] = useStored('programs', [])
@@ -48,28 +92,26 @@ export default function App() {
   else if (page === 'workout') view = <Workout id={id} {...store} />
   else if (page === 'history') view = <History {...store} />
   else if (page === 'progress') view = <Progress sessions={sessions} />
-  else if (page === 'week') view = <Week sessions={sessions} tendonDays={tendonDays} flexDays={flexDays} />
   else if (page === 'flex' && id) view = <FlexSession zone={id} setFlexDays={setFlexDays} />
   else if (page === 'flex') view = <Flex />
   else if (page === 'tendons' && id === 'session') view = <TendonSession setTendonDays={setTendonDays} />
   else if (page === 'tendons' && id === 'test') view = <WallTest tests={tendonTests} setTests={setTendonTests} />
   else if (page === 'tendons') view = <Tendons tendonDays={tendonDays} tests={tendonTests} />
   else if (page === 'gym') view = <Gym gym={gym} setGym={setGym} />
-  else view = <ExerciseList gym={gym} />
+  else if (page === 'exercises') view = <ExerciseList gym={gym} />
+  else view = <Week sessions={sessions} tendonDays={tendonDays} flexDays={flexDays} />
 
-  const tab = page === 'workout' ? 'programs' : ['exercise', 'gym', ''].includes(page ?? '') ? '' : page
+  useEffect(() => { document.querySelector('meta[name=theme-color]').content = document.querySelector('.soft') ? '#EEF3F8' : '#10152A' })
   return (
     <>
       <header className="top">
-        <a href="#/" className="brand">STAMINA</a>
+        <a href="#/" className="brand">Stamina</a>
         <nav>
-          <a href="#/" className={tab === '' ? 'on' : ''}>Exercises</a>
-          <a href="#/week" className={tab === 'week' ? 'on' : ''}>Week</a>
-          <a href="#/programs" className={tab === 'programs' ? 'on' : ''}>Programs</a>
-          <a href="#/flex" className={tab === 'flex' ? 'on' : ''}>Flexibility</a>
-          <a href="#/tendons" className={tab === 'tendons' ? 'on' : ''}>Tendons</a>
-          <a href="#/progress" className={tab === 'progress' ? 'on' : ''}>Progress</a>
-          <a href="#/history" className={tab === 'history' ? 'on' : ''}>History</a>
+          {TABS.map(([href, name, pages, icon]) => (
+            <a key={name} href={href} className={pages.includes(page) ? 'on' : ''} aria-current={pages.includes(page) ? 'page' : undefined}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon} /></svg>{name}
+            </a>
+          ))}
         </nav>
       </header>
       <main>{view}</main>
@@ -80,11 +122,11 @@ export default function App() {
 
 function BodyMap({ primary, secondary, onClick }) {
   const data = bodyData(primary, secondary)
-  const colors = ['#8fa832', '#d4ff3a', '#d4ff3a']
+  const colors = ['#8A3446', '#FF5263', '#FF5263']
   return (
     <div className="bodymap">
       {['anterior', 'posterior'].map(type => (
-        <Model key={type} type={type} data={data} highlightedColors={colors} bodyColor="#3a3d44"
+        <Model key={type} type={type} data={data} highlightedColors={colors} bodyColor="#2E3860"
           onClick={onClick && (m => onClick(m.muscle))} style={{ width: '100%' }} />
       ))}
     </div>
@@ -95,25 +137,27 @@ const label = s => s.replace(/\b\w/g, c => c.toUpperCase())
 
 function ExerciseList({ gym }) {
   const [filters, setFilters] = useStored('filters', { q: '', muscle: '', equipment: '' })
-  const results = useMemo(() => filterExercises(exercises, filters, gym), [filters, gym])
+  const deferred = useDeferredValue(filters) // keeps typing smooth over 800+ cards
+  const results = useMemo(() => filterExercises(exercises, deferred, gym), [deferred, gym])
   const set = patch => setFilters({ ...filters, ...patch })
 
   return (
     <div className="split">
       <aside className="panel">
         <input type="search" placeholder="Search exercises…" value={filters.q} onChange={e => set({ q: e.target.value })} aria-label="Search" />
-        <select value={filters.muscle} onChange={e => set({ muscle: e.target.value })} aria-label="Muscle">
-          <option value="">All muscles</option>
-          {MUSCLES.map(m => <option key={m} value={m}>{label(m)}</option>)}
-        </select>
+        <div className="chips" role="group" aria-label="Muscle">
+          {MUSCLES.map(m => <button key={m} aria-pressed={filters.muscle === m} onClick={() => set({ muscle: filters.muscle === m ? '' : m })}>{label(m)}</button>)}
+        </div>
         <select value={filters.equipment} onChange={e => set({ equipment: e.target.value })} aria-label="Equipment">
           <option value="">All equipment</option>
           {EQUIPMENT.map(m => <option key={m} value={m}>{label(m)}</option>)}
         </select>
-        <a href="#/gym" className="gym-link">{gym.length ? `My gym · ${gym.length} equipment type${gym.length > 1 ? "s" : ""} · edit` : 'Set up my gym equipment →'}</a>
-        <p className="hint">Tap a muscle to filter</p>
-        <BodyMap primary={filters.muscle ? [filters.muscle] : []}
-          onClick={slug => { const m = muscleFromSlug(slug); set({ muscle: m === filters.muscle ? '' : m }) }} />
+        <a href="#/gym" className="gym-link">{gym.length ? `My gym: ${gym.length} equipment type${gym.length > 1 ? "s" : ""}` : 'Set up my gym equipment'}</a>
+        <details className="mapfold" open={matchMedia('(min-width: 761px)').matches}>
+          <summary>Pick on the body</summary>
+          <BodyMap primary={filters.muscle ? [filters.muscle] : []}
+            onClick={slug => { const m = muscleFromSlug(slug); set({ muscle: m === filters.muscle ? '' : m }) }} />
+        </details>
       </aside>
       <section>
         <p className="count">{results.length} exercises</p>
@@ -123,7 +167,7 @@ function ExerciseList({ gym }) {
               <a href={`#/exercise/${e.id}`} className="card">
                 <img {...photo(e.images[0])} alt="" loading="lazy" />
                 <strong>{e.name}</strong>
-                <span>{e.primaryMuscles.map(label).join(', ')} · {e.equipment ?? 'none'}</span>
+                <span>{[...e.primaryMuscles, e.equipment].filter(Boolean).join(', ')}</span>
               </a>
             </li>
           ))}
@@ -152,12 +196,12 @@ function ExerciseDetail({ ex, programs, setPrograms, sessions }) {
 
   return (
     <article className="detail">
-      <a href="#/" className="back">← Exercises</a>
+      <a href="#/exercises" className="back">← Exercises</a>
+      <div className="panels">{ex.images.map((i, n) => <img key={i} {...photo(i)} alt={ex.name} className={n ? '' : 'lead'} />)}</div>
       <h1>{ex.name}</h1>
       <p className="tags">{[ex.level, ex.category, ex.equipment, ex.mechanic, ex.force].filter(Boolean).map(t => <span key={t}>{t}</span>)}</p>
       <div className="split">
         <div>
-          <div className="photos">{ex.images.map(i => <img key={i} {...photo(i)} alt={ex.name} />)}</div>
           <h2>Instructions</h2>
           <ol>{ex.instructions.map((s, i) => <li key={i}>{s}</li>)}</ol>
         </div>
@@ -172,7 +216,7 @@ function ExerciseDetail({ ex, programs, setPrograms, sessions }) {
             </select>
             <button onClick={addToProgram}>Add</button>
           </div>
-          {added && <p className="ok">Added. <a href={`#/programs/${added}`}>Open program →</a></p>}
+          {added && <p className="ok">Added. <a href={`#/programs/${added}`}>Open program</a></p>}
           {points.length > 0 && <><h2>Progress</h2><Chart points={points} unit={unit} /></>}
         </aside>
       </div>
@@ -188,6 +232,7 @@ function Chart({ points, unit }) {
   const y = v => h - pad - (max === min ? (h - 2 * pad) / 2 : (v - min) * (h - 2 * pad) / (max - min))
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="chart" role="img" aria-label={`Best set from ${min} to ${max} ${unit}`}>
+      <polygon points={`${x(0)},${h - pad} ${points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ')} ${x(points.length - 1)},${h - pad}`} />
       <polyline points={points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ')} />
       {points.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.value)} r="3"><title>{p.date}: {p.value} {unit}</title></circle>)}
       <text x={pad} y={h - 4}>{points[0].date}</text>
@@ -216,7 +261,10 @@ function Programs({ programs, setPrograms }) {
       <ul className="list">
         {programs.map(p => (
           <li key={p.id}>
-            <a href={`#/programs/${p.id}`}><strong>{p.name}</strong><span>{p.items.length} exercises</span></a>
+            <a href={`#/programs/${p.id}`}>
+              {byId.get(p.items[0]?.exId) && <img {...photo(byId.get(p.items[0].exId).images[0])} alt="" />}
+              <span><strong>{p.name}</strong>{p.items.length} exercises</span>
+            </a>
             <a href={`#/workout/${p.id}`} className="btn">Start</a>
           </li>
         ))}
@@ -311,6 +359,9 @@ function Workout({ id, programs, sessions, setSessions }) {
     ...active, entries: active.entries.map((e, i) => i !== ei ? e : { ...e, sets: [...e.sets, { ...(e.sets.at(-1) ?? { reps: 10, weight: '' }), done: false }] }),
   })
 
+  const setsTotal = active.entries.reduce((n, e) => n + e.sets.length, 0)
+  const setsDone = active.entries.reduce((n, e) => n + e.sets.filter(s => s.done).length, 0)
+
   function finish() {
     const entries = active.entries
       .map(e => ({ exId: e.exId, sets: e.sets.filter(s => s.done).map(({ reps, weight }) => ({ reps: +reps || 0, weight: +weight || 0 })) }))
@@ -322,8 +373,12 @@ function Workout({ id, programs, sessions, setSessions }) {
   }
 
   return (
-    <div className="narrow">
+    <div className="narrow workout">
+      <a href="#/programs" className="back">← Programs</a>
       <h1>{program.name}</h1>
+      <div className="gauge-wrap">
+        <Gauge label={`${setsDone} of ${setsTotal} sets done`} cells={active.entries.map(e => ({ fill: e.sets.filter(s => s.done).length / e.sets.length }))} />
+      </div>
       <label className="date">Date <input type="date" value={active.date} onChange={e => setDraft({ ...active, date: e.target.value })} /></label>
       {active.entries.map((e, ei) => (
         <section key={ei} className="exercise-log">
@@ -337,7 +392,7 @@ function Workout({ id, programs, sessions, setSessions }) {
                   <td>{si + 1}</td>
                   <td><input type="number" min="0" inputMode="numeric" value={s.reps} onChange={x => setSet(ei, si, { reps: x.target.value })} aria-label="Reps" /></td>
                   <td><input type="number" min="0" step="0.5" inputMode="decimal" value={s.weight} onChange={x => setSet(ei, si, { weight: x.target.value })} aria-label="Weight in kg" /></td>
-                  <td><input type="checkbox" checked={s.done} onChange={x => setSet(ei, si, { done: x.target.checked })} aria-label="Done" /></td>
+                  <td><input type="checkbox" className="tick" checked={s.done} onChange={x => { navigator.vibrate?.(20); setSet(ei, si, { done: x.target.checked }) }} aria-label="Done" /></td>
                 </tr>
               ))}
             </tbody>
@@ -345,7 +400,7 @@ function Workout({ id, programs, sessions, setSessions }) {
           <button className="ghost" onClick={() => addSet(ei)}>+ Set</button>
         </section>
       ))}
-      <div className="row">
+      <div className="actions">
         <button onClick={finish}>Finish workout</button>
         <button className="ghost" onClick={() => { if (confirm('Discard this workout?')) { setDraft(null); location.hash = '#/programs' } }}>Discard</button>
       </div>
@@ -367,7 +422,7 @@ function Progress({ sessions }) {
   const ids = [...new Set(recentFirst.flatMap(s => s.entries.map(e => e.exId)))]
   return (
     <div className="narrow">
-      <h1>Progress</h1>
+      <Sub items={RECORDS} current="#/progress" />
       {ids.length === 0 && <p className="hint">Log a workout to see your progress here.</p>}
       <div className="charts">
         {ids.map(id => {
@@ -376,7 +431,7 @@ function Progress({ sessions }) {
           return (
             <section key={id} className="chart-card">
               <a href={`#/exercise/${id}`}>{byId.get(id)?.name ?? id}</a>
-              <p className="big">{last} {unit} {diff !== 0 && <span className={diff > 0 ? 'up' : 'down'}>{diff > 0 ? '+' : ''}{diff} {unit}</span>}</p>
+              <p className="big-num">{last} {unit} {diff !== 0 && <span className={diff > 0 ? 'up' : 'down'}>{diff > 0 ? '+' : ''}{diff} {unit}</span>}</p>
               <Chart points={points} unit={unit} />
               <p className="hint">{points.length} session{points.length > 1 ? 's' : ''} · best set per session</p>
             </section>
@@ -392,7 +447,7 @@ function Gym({ gym, setGym }) {
   const count = filterExercises(exercises, {}, gym).length
   return (
     <div className="narrow">
-      <a href="#/" className="back">← Exercises</a>
+      <a href="#/exercises" className="back">← Exercises</a>
       <h1>My gym</h1>
       <p className="hint">Tick the equipment your gym has. Exercises that need anything else are hidden from the list and the program builder. Bodyweight exercises are always shown.</p>
       <div className="checks">
@@ -412,13 +467,13 @@ function History({ sessions, setSessions }) {
   const sorted = [...sessions].sort((a, b) => b.date.localeCompare(a.date))
   return (
     <div className="narrow">
-      <h1>History</h1>
+      <Sub items={RECORDS} current="#/history" />
       {sorted.length === 0 && <p className="hint">No workout logged yet. Start one from a program.</p>}
       <ul className="history">
         {sorted.map(s => (
           <li key={s.id}>
             <header>
-              <strong>{s.date}</strong> <span>{s.programName}</span>
+              <strong>{fmtDate(s.date)}</strong> <span>{s.programName}</span>
               <button className="ghost" onClick={() => confirm('Delete this workout?') && setSessions(sessions.filter(x => x.id !== s.id))} aria-label="Delete workout">✕</button>
             </header>
             <ul>
@@ -442,7 +497,7 @@ function Flex() {
   const [level, setLevel] = useStored('flexLevel', 1)
   return (
     <div className="soft narrow">
-      <h1>Flexibility</h1>
+      <Sub items={RECOVERY} current="#/flex" />
       <div className="levels" role="radiogroup" aria-label="Difficulty">
         {[1, 2, 3].map(n => (
           <button key={n} role="radio" aria-checked={level === n} className={level === n ? 'on' : ''} onClick={() => setLevel(n)}>
@@ -457,7 +512,7 @@ function Flex() {
             <li key={z}><a href={`#/flex/${z}`} className={z === 'full' ? 'zone full' : 'zone'}>
               {list[0] && <img {...photo(list[0].images[0])} alt="" loading="lazy" />}
               <strong>{ZONE_LABELS[z]}</strong>
-              <span>{list.length} stretches · ~{mins(list)} min</span>
+              <span>{list.length} stretches, ~{mins(list)} min</span>
             </a></li>
           )
         })}
@@ -507,7 +562,8 @@ function Player({ steps, rest, back, backLabel, holdLabel, intro, onDone }) {
   if (run.done) return (
     <div className="player">
       <h1>Well done!</h1>
-      <p className="hint">{steps.length} holds · ~{Math.round(steps.reduce((n, s) => n + s.hold + rest, 0) / 60)} min</p>
+      <Gauge label="Session complete" cells={steps.map(() => ({ fill: 1 }))} />
+      <p className="step">{steps.length} holds in ~{Math.round(steps.reduce((n, s) => n + s.hold + rest, 0) / 60)} min</p>
       <a href={back} className="btn big">{backLabel}</a>
     </div>
   )
@@ -515,19 +571,22 @@ function Player({ steps, rest, back, backLabel, holdLabel, intro, onDone }) {
   const { name, img, side, how } = steps[run.i], total = run.phase === 'hold' ? steps[run.i].hold : rest
   const r = 54, c = 2 * Math.PI * r
   return (
-    <div className="player">
+    <div className={`player ${run.phase}`}>
       <a href={back} className="back">← Quit</a>
-      <p className="hint">{run.i + 1} / {steps.length} · {side && `${side} · `}{run.phase === 'rest' ? 'Get ready' : holdLabel}</p>
+      <Gauge label={`Hold ${run.i + 1} of ${steps.length}`} cells={steps.map((_, i) => ({ fill: i < run.i ? 1 : 0, now: i === run.i }))} />
       <div className="illu"><img key={img} {...photo(img)} alt={name} /></div>
-      <h2>{name}</h2>
       <svg viewBox="0 0 120 120" className={`ring ${run.phase}`} role="timer" aria-label={`${run.left} seconds left`}>
+        <circle cx="60" cy="60" r="60" className="disc" />
         <circle cx="60" cy="60" r={r} className="track" />
-        <circle cx="60" cy="60" r={r} className="bar" strokeDasharray={c} strokeDashoffset={c * (1 - run.left / total)} />
-        <text x="60" y="70" textAnchor="middle">{run.left}</text>
+        {/* remounted each phase so the bar refills at once; aims one second ahead because the CSS transition lasts 1 s */}
+        <circle key={`${run.i}${run.phase}`} cx="60" cy="60" r={r} className="bar" strokeDasharray={c} strokeDashoffset={c * (1 - (run.left - 1) / total)} />
+        <text x="60" y="76" textAnchor="middle">{run.left}</text>
       </svg>
+      <p className="step">{run.phase === 'rest' ? 'Get ready' : holdLabel}{side && `, ${side.toLowerCase()}`}</p>
+      <h2>{name}</h2>
       <div className="row center">
         <button className="ghost" onClick={() => setRun({ ...run, paused: !run.paused })}>{run.paused ? 'Resume' : 'Pause'}</button>
-        <button className="ghost" onClick={() => setRun({ ...run, left: 1 })}>Skip →</button>
+        <button className="ghost" onClick={() => setRun({ ...run, left: 1 })}>Skip</button>
       </div>
       <details><summary>How to</summary><ol>{how.map((t, i) => <li key={i}>{t}</li>)}</ol></details>
     </div>
@@ -546,9 +605,9 @@ function FlexSession({ zone, setFlexDays }) {
       <Player steps={steps} rest={REST} back="#/flex" backLabel="Back to zones" holdLabel={zone === 'roller' ? 'Roll slowly' : 'Hold'} onDone={done} intro={<>
         <a href="#/flex" className="back">← Flexibility</a>
         <h1>{ZONE_LABELS[zone]}</h1>
-        <p className="hint"><Dots n={level} /> {list.length} stretches · {HOLD}s each · ~{mins(list)} min</p>
+        <p className="hint"><Dots n={level} /> {list.length} stretches, {HOLD}s each, ~{mins(list)} min</p>
         <ol className="stretch-list">
-          {list.map(e => <li key={e.id}><img {...photo(e.images[0])} alt="" loading="lazy" /><span>{e.name}{twoSided(e) && <small> · both sides</small>}</span></li>)}
+          {list.map(e => <li key={e.id}><img {...photo(e.images[0])} alt="" loading="lazy" /><span>{e.name}{twoSided(e) && <small>Both sides</small>}</span></li>)}
         </ol>
       </>} />
     </div>
@@ -563,7 +622,7 @@ function Tendons({ tendonDays, tests }) {
   const last = tendonDays.at(-1), since = last && daysSince(last)
   return (
     <div className="tendon narrow">
-      <h1>Tendons</h1>
+      <Sub items={RECOVERY} current="#/tendons" />
       <p className="hint">Long, heavy holds make tendons stiffer and stronger; short pulses do not. 2–3 sessions a week, never two days in a row.</p>
       <div className="levels" role="radiogroup" aria-label="Difficulty">
         {[1, 2, 3].map(n => (
@@ -572,10 +631,10 @@ function Tendons({ tendonDays, tests }) {
           </button>
         ))}
       </div>
-      <a href="#/tendons/session" className="btn big">Start session · ~{tendonMins(level)} min</a>
-      {last && <p className={since < 1 ? 'warn' : 'hint'}>Last session: {last}{since < 1 ? ' — rest at least one day before the next one.' : ''}</p>}
+      <a href="#/tendons/session" className="btn big">Start session, ~{tendonMins(level)} min</a>
+      {last && <p className={since < 1 ? 'warn' : 'hint'}>Last session: {fmtDate(last)}.{since < 1 ? ' Rest at least one day before the next one.' : ''}</p>}
       <ul className="stretch-list">
-        {TENDON_HOLDS.map(h => <li key={h.id}><img {...photo(h.img)} alt="" loading="lazy" /><span><strong>{h.name}</strong><small> · {h.tendon}{h.sides ? ' · each side' : ''}</small></span></li>)}
+        {TENDON_HOLDS.map(h => <li key={h.id}><img {...photo(h.img)} alt="" loading="lazy" /><span><strong>{h.name}</strong><small>{h.tendon}{h.sides ? ', each side' : ''}</small></span></li>)}
       </ul>
       <section className="chart-card">
         <strong>Wall-sit test</strong>
@@ -599,7 +658,7 @@ function TendonSession({ setTendonDays }) {
       <Player steps={steps} rest={TENDON_REST} back="#/tendons" backLabel="Back to tendons" holdLabel="Hold hard" onDone={done} intro={<>
         <a href="#/tendons" className="back">← Tendons</a>
         <h1>Tendon session</h1>
-        <p className="hint"><Dots n={level} /> {steps.length} holds · {steps[0].hold}s each · ~{tendonMins(level)} min · {load}</p>
+        <p className="hint"><Dots n={level} /> {steps.length} holds, {steps[0].hold}s each, ~{tendonMins(level)} min. {load}</p>
       </>} />
     </div>
   )
@@ -633,26 +692,64 @@ function WallTest({ tests, setTests }) {
 }
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const LIFT_IMG = {
+  'Chest + triceps': 'Barbell_Bench_Press_-_Medium_Grip/1.jpg', 'Back + biceps': 'Bent_Over_Barbell_Row/1.jpg',
+  Legs: 'Barbell_Full_Squat/1.jpg', 'Shoulders + traps': 'Standing_Military_Press/1.jpg',
+}
+
+// One day's tasks in training order. Runs are not logged, so they have no link and never show as done.
+function dayTasks(d) {
+  const trains = d.lift || d.run
+  const [runName, runTime] = d.run?.split(' · ') ?? []
+  return [
+    d.tendons && { key: 't', name: 'Tendons', note: d.tendons === 'todo' && trains ? '10 min, before' : '10 min', href: '#/tendons/session', done: d.tendons === 'done' },
+    d.lift && { key: 'l', name: d.lift.name, note: 'Lifting', href: '#/programs', done: d.lift.done },
+    d.run && { key: 'r', name: runName, note: runTime },
+    { key: 'f', name: `Stretch: ${ZONE_LABELS[d.flex.zone]}`, note: trains ? '5 min, after' : '5 min', href: `#/flex/${d.flex.zone}`, done: d.flex.done },
+  ].filter(t => t && (!d.past || t.done))
+}
 
 function Week({ sessions, tendonDays, flexDays }) {
   const days = planWeek(today(), { lifts: sessions.map(s => s.date), tendons: tendonDays, flex: flexDays })
-  const mark = done => done ? '✓ ' : ''
+  const now = days.findIndex(d => d.date === today()), d = days[now]
+  const tasks = dayTasks(d), next = tasks.find(t => t.href && !t.done)
+  const title = d.lift?.name ?? d.run?.split(' · ')[0] ?? 'Rest day'
+  const img = d.lift ? LIFT_IMG[d.lift.name] : d.run ? 'Jogging_Treadmill/0.jpg' : 'Adductor/0.jpg'
+  const stamina = Math.round(days.reduce((n, x) => n + dayFill(x), 0) / days.length * 100)
   return (
-    <div className="narrow">
-      <h1>This week</h1>
-      <p className="hint">Lifting, running, tendons and stretching without overload. Missed a session? It moves to a free day: never legs the day before a run, tendons never two days in a row.</p>
-      <ul className="week">
-        {days.map((d, i) => (
-          <li key={d.date} className={d.date === today() ? 'today' : d.past ? 'past' : ''}>
-            <strong>{DAY_NAMES[i]} <small>{d.date.slice(5)}</small></strong>
-            {d.lift && <a href="#/programs" className={d.lift.done ? 'done' : ''}>{mark(d.lift.done)}{d.lift.name}</a>}
-            {d.run && !d.past && <span>{d.run}</span>}
-            {d.tendons && <a href="#/tendons/session" className={d.tendons === 'done' ? 'done' : ''}>{mark(d.tendons === 'done')}Tendons · 10 min{d.tendons === 'todo' && (d.lift || d.run) ? ', before' : ''}</a>}
-            {(!d.past || d.flex.done) && <a href={`#/flex/${d.flex.zone}`} className={d.flex.done ? 'done' : ''}>{mark(d.flex.done)}Stretch · {ZONE_LABELS[d.flex.zone]}{d.lift || d.run ? ', after' : ''}</a>}
-            {!d.past && !d.lift && !d.run && <span>Rest</span>}
-          </li>
-        ))}
+    <div className={`today narrow${d.lift || d.run ? '' : ' soft'}`}>
+      <header className="hero">
+        <img {...photo(img)} alt="" />
+        <p>{WEEKDAYS[now]}</p>
+        <h1>{title}</h1>
+      </header>
+      <section className="stamina">
+        <div className="gauge-head"><strong>This week</strong><span className="big-num">{stamina}%</span></div>
+        <Gauge label={`Week stamina ${stamina}%`} cells={days.map((x, i) => ({ fill: dayFill(x), label: DAY_NAMES[i][0], now: i === now }))} />
+      </section>
+      <ul className="tasks">
+        {tasks.map(t => {
+          const inner = <><strong>{t.name}</strong><span>{t.done ? 'Done' : t.note}</span></>
+          return <li key={t.key}>{t.href
+            ? <a href={t.href} className={t.done ? 'done' : t === next ? 'next' : ''}>{inner}</a>
+            : <div>{inner}</div>}</li>
+        })}
       </ul>
+      <section>
+        <ul className="week">
+          {days.map((x, i) => x !== d && (!x.past || dayTasks(x).length > 0) && (
+            <li key={x.date} className={x.past ? 'past' : ''}>
+              <strong>{DAY_NAMES[i]}<small>{fmtDate(x.date).split(', ')[1]}</small></strong>
+              {dayTasks(x).map(t => t.href
+                ? <a key={t.key} href={t.href} className={t.done ? 'done' : ''}>{t.done && '✓ '}{t.name}</a>
+                : <span key={t.key}>{t.name}</span>)}
+              {!x.past && !x.lift && !x.run && <span>Rest</span>}
+            </li>
+          ))}
+        </ul>
+        <p className="hint">Missed a session? It moves to a free day: never legs the day before a run, tendons never two days in a row.</p>
+      </section>
     </div>
   )
 }

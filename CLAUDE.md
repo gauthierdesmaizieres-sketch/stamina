@@ -2,9 +2,12 @@
 
 User speaks French; answer in French. See README.md for stack, commands and image generator.
 
+## Design
+Two lights in `src/style.css`: night (default: midnight blue of the manga images + the icon's red, slanted panels) and morning (`.soft`, the "C · Doux" pastel; `:root:has(.soft)` swaps the tokens). Type: Sofia Sans + Sofia Sans Extra Condensed italic. Signature: the slanted stamina `Gauge`. Page changes use the View Transitions API (`useHash`).
+
 ## Code map
 - React 19 + Vite PWA, no backend. Everything in `src/App.jsx` (one component per page) + helpers in `src/lib.js` (tested in `src/lib.test.js`, `npm test`).
-- Routing: hash routes (`#/programs`, ...) parsed in App.jsx; top nav links at ~line 57. Persistence: `useStored(key, initial)` hook → localStorage.
+- Routing: hash routes (`#/programs`, ...) parsed in App.jsx; `TABS` in App.jsx is the nav (`#/` Today, `#/exercises`, ...). Persistence: `useStored(key, initial)` hook → localStorage.
 - Data: `src/data/exercises.json` (free-exercise-db). Fields: name, level (beginner/intermediate/expert), category, equipment, primaryMuscles, secondaryMuscles, instructions, images.
 - Anime images: `public/manga/<exercise id>/<n>.webp`, made by `tools/manga/generate.py` (SD1.5 + ControlNet Canny). App falls back to dataset photo.
   Known issue: generated poses can be wrong (`Plank/0.webp` shows a kneeling man, not a plank) — always look at each generated image before shipping it.

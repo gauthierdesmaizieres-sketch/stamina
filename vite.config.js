@@ -11,12 +11,13 @@ export default defineConfig({
       manifest: {
         name: 'Stamina',
         short_name: 'Stamina',
-        theme_color: '#201517',
-        background_color: '#201517',
+        theme_color: '#10152A',
+        background_color: '#10152A',
         display: 'standalone',
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
       },
       workbox: {
+        globPatterns: ['**/*.{js,css,html}', 'assets/*-latin-*.woff2'], // fonts work offline
         maximumFileSizeToCacheInBytes: 3_000_000,
         // Exercise images (manga redraws, or the dataset's photos as fallback): cache them as they are viewed.
         runtimeCaching: [{

@@ -196,3 +196,6 @@ export function planWeek(today, { lifts = [], tendons = [], flex = [] }) {
   days.forEach(d => { d.flex = { zone: d.lift?.zone ?? 'full', done: flex.includes(d.date) } })
   return days
 }
+
+// Share of a planned day already done, 0–1: lift, tendons and stretch count alike, runs are not logged.
+export const dayFill = d => (!!d.lift?.done + (d.tendons === 'done') + !!d.flex.done) / (!!d.lift + !!d.tendons + 1)
